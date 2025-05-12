@@ -10,6 +10,62 @@ def get_hash(text):
     # MD5 is one of the fastest algorithms
     return hashlib.md5(text).hexdigest()
 
+def format_messages_for_llama_3_1(messages):
+    """
+    Format messages in the chat format expected by Llama-3.1 models.
+    
+    Llama-3.1 expects a specific chat format like:
+    <|begin_of_text|><|start_header_id|>system<|end_header_id|>
+    You are a helpful AI assistant.<|eot_id|>
+    <|start_header_id|>user<|end_header_id|>
+    Hello!<|eot_id|>
+    <|start_header_id|>assistant<|end_header_id|>
+    
+    Args:
+        messages (list): List of message dictionaries with 'role' and 'content'
+        
+    Returns:
+        str: Formatted prompt string
+    """
+    formatted_prompt = "<|begin_of_text|>"
+    
+    for message in messages:
+        role = message.get("role", "user")
+        content = message.get("content", "")
+        
+        formatted_prompt += f"<|start_header_id|>{role}<|end_header_id|>\n{content}<|eot_id|>\n"
+    
+    # Add the assistant starter token to prompt the model to generate
+    formatted_prompt += "<|start_header_id|>assistant<|end_header_id|>\n"
+    
+    return formatted_prompt
+
+def extract_assistant_response(prompt, full_response):
+    """
+    Extract only the assistant's response part from the full response.
+    
+    Args:
+        prompt (str): The original prompt sent to the model
+        full_response (str): The full response including prompt and completion
+        
+    Returns:
+        str: Just the assistant's response
+    """
+    # If the response doesn't include the prompt, return it as is
+    if not full_response.startswith(prompt):
+        return full_response
+    
+    # Remove the prompt portion to get just the completion
+    assistant_response = full_response[len(prompt):]
+    
+    # Handle potential end tokens
+    end_tokens = ["<|eot_id|>", "<|end_of_text|>"]
+    for token in end_tokens:
+        if token in assistant_response:
+            assistant_response = assistant_response.split(token)[0]
+    
+    return assistant_response.strip()
+
 
 def parse_extraction_output(output_str, record_delimiter=None, tuple_delimiter=None):
     """
