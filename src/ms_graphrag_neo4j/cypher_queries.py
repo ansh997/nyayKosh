@@ -1,4 +1,4 @@
-import_nodes_query = """
+old_import_nodes_query = """
 CREATE (c:__Chunk__ {id: $chunk_id})
 SET c.text = $text
 WITH c
@@ -7,6 +7,17 @@ MERGE (n:__Entity__ {name: row.entity_name})
 SET n:$(row.entity_type),
     n.description = coalesce(n.description, []) + [row.entity_description]
 MERGE (n)<-[:MENTIONS]-(c)
+"""
+
+import_nodes_query = """
+MERGE (c:__Chunk__ {id: $chunk_id})
+SET c.text = $text
+WITH c, $data AS data
+UNWIND data AS row
+MERGE (n:__Entity__ {name: row.entity_name})
+SET n:$(row.entity_type),
+    n.description = coalesce(n.description, []) + [row.entity_description]
+MERGE (c)-[:MENTIONS]->(n)
 """
 
 import_relationships_query = """

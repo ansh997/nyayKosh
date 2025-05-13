@@ -83,9 +83,9 @@ class CustomGraphRAG:
             create_constraints (bool, optional): Whether to create database constraints. Defaults to True.
         """
         # Check for HF API token instead of OpenAI
-        if not os.environ.get("HF_API_TOKEN"):
+        if not os.environ.get("HF_TOKEN"):
             raise ValueError(
-                "You need to define the `HF_API_TOKEN` environment variable"
+                "You need to define the `HF_TOKEN` environment variable"
             )
         
         if not  os.environ.get('OPENROUTER_API_KEY'):
@@ -152,11 +152,15 @@ class CustomGraphRAG:
             return parse_extraction_output(output.content)
 
         # Create tasks for all input texts
+        print('Tasks are being processed', end='\r')
         tasks = [process_text(text) for text in input_texts]
+        print('All Tasks are completely processed.                 ')
 
+        
         # Process tasks with tqdm progress bar
         # Use semaphore to limit concurrent tasks if max_workers is specified
         if self.max_workers:
+            print('Using semaphore to to limit concurrent tasks')
             semaphore = asyncio.Semaphore(self.max_workers)
 
             async def process_with_semaphore(task):
@@ -171,14 +175,16 @@ class CustomGraphRAG:
             ):
                 results.append(await task)
         else:
+            print('Not Using semaphore to to limit concurrent tasks')
             results = []
             for task in tqdm.as_completed(
                 tasks, total=len(tasks), desc="Extracting nodes & relationships"
             ):
                 results.append(await task)
-
+        print(f'{results = }')
         total_relationships = 0
         # Import nodes and relationships
+        print('Importing nodes and relationships', end='\r')
         for text, output in zip(input_texts, results):
             nodes, relationships = output
             total_relationships += len(relationships)
@@ -189,6 +195,7 @@ class CustomGraphRAG:
             )
             # Import relationships
             self.query(import_relationships_query, params={"data": relationships})
+        print('Importing nodes and relationships.         ')
 
         return f"Successfuly extracted and imported {total_relationships} relationships"
 
@@ -334,7 +341,9 @@ class CustomGraphRAG:
                     "content": COMMUNITY_REPORT_PROMPT.format(input_text=input_text),
                 },
             ]
+            # summary = await self.achat(messages, model=self.model)
             summary = await self.achat(messages, model=self.model)
+            print(summary.content)
             return {
                 "community": extract_json(summary.content),
                 "communityId": community["communityId"],
@@ -461,6 +470,7 @@ class CustomGraphRAG:
             object: Message object with content attribute containing the response
         """
         openrouter_key = os.getenv('OPENROUTER_API_KEY')
+        
         if not openrouter_key:
             raise ValueError("You need to define the `OPENROUTER_API_KEY` environment variable")
 
@@ -471,17 +481,31 @@ class CustomGraphRAG:
 
         try:
             completion = await client.chat.completions.create(  # Use await for async call
+                model=model,
+                messages=messages,
+                temperature=temperature,
                 extra_headers={
                     "HTTP-Referer": config.get("website_url", "<YOUR_SITE_URL>"),  # Optional: Site URL
                     "X-Title": config.get("website_name", "<YOUR_SITE_NAME>"),      # Optional: Site Title
                 },
-                model=model,
-                messages=messages,
-                temperature=temperature,
-                # max_tokens=config.get("max_tokens", 512), # Consider adding if needed and supported by OpenRouter
+                max_tokens=config.get("max_tokens", 2*512), # Consider adding if needed and supported by OpenRouter
             )
-            response_text = completion.choices[0].message.content
-            return type('Message', (), {'content': response_text})
+            print(completion)
+            
+            if not completion:
+                raise ValueError("OpenRouter returned no response.")
+            if not hasattr(completion, "choices") or not completion.choices:
+                raise ValueError(f"No choices returned. Raw response: {completion}")
+            
+            # response_text = completion.choices[0].message.content
+            
+            # return type('Message', (), {'content': response_text})
+            
+            message = completion.choices[0].message
+            if not message or not hasattr(message, "content"):
+                raise ValueError(f"No message content found. Raw response: {completion}")
+
+            return type('Message', (), {'content': message.content})
 
         except Exception as e:
             raise Exception(f"OpenRouter API Error: {e}")
